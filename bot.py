@@ -1,12 +1,17 @@
 import logging
-import sqlite3
+
+import openpyxl
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils import get_column_letter, column_index_from_string
 
 from aiogram import Bot, types
 from aiogram.utils import executor
 from aiogram.dispatcher import Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.types import ReplyKeyboardRemove, \
+    ReplyKeyboardMarkup, KeyboardButton, \
+    InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import TOKEN
 from utils import TestStates
@@ -18,32 +23,55 @@ logging.basicConfig(format=u'%(filename)+13s [ LINE:%(lineno)-4s] %(levelname)-8
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 dp.middleware.setup(LoggingMiddleware())
-conn = sqlite3.connect('users.db')
 
 
 @dp.message_handler(content_types=["new_chat_members"])
 async def new_member(message: types.Message):
-    cur = conn.cursor()
     await message.delete()
     await message.answer(MESSAGES['hello'])
-    name_table = '_' + str(abs(message.chat.id))
-    cur.execute(f"INSERT INTO {name_table} VALUES ('{str(message.from_user.username)}')")
-    cur.execute(f"alter table {name_table} add column '{message.from_user.username}' 'text'")
-    cur.execute(f"INSERT INTO {name_table + '_approve'} VALUES ('{str(message.from_user.username)}')")
-    cur.execute(f"alter table {name_table + '_approve'} add column '{message.from_user.username}' 'text'")
-    conn.commit()
 
 
-@dp.message_handler(commands=['create_bd'])
-async def process_start_command(message: types.Message):
-    cur = conn.cursor()
-    name_table = '_' + str(abs(message.chat.id))
+@dp.message_handler(commands=['add_me'])
+async def process_add_user_command(message: types.Message):
+    name_table = str(abs(message.chat.id))
+    if "/add_me" in message.text:
+        await message.delete()
+    file = openpyxl.load_workbook(f'{name_table}.xlsx')
+    current_sheet = file.get_sheet_by_name('main')
+    Column_C = current_sheet['C']
     try:
-        cur.execute(f'''CREATE TABLE {name_table} (name text)''')
-        cur.execute(f'''CREATE TABLE {name_table + '_approve'} (name text)''')
-        conn.commit()
+        max_row_for_c = len(Column_C) + 1
+    except ValueError:
+        max_row_for_c = 2
+    coll = get_column_letter(max_row_for_c)
+    print(max_row_for_c)
+    print(coll)
+
+    current_sheet[f'A{max_row_for_c}'] = message.from_user.username
+    current_sheet[f'{coll}1'] = message.from_user.username
+    file.save(f"{abs(int(name_table))}.xlsx")
+
+
+@dp.message_handler(commands=['start_me'])
+async def process_start_command(message: types.Message):
+    inline_btn_1 = InlineKeyboardButton('Хочу участвовать', callback_data='add_to_bd')
+    inline_kb1 = InlineKeyboardMarkup().add(inline_btn_1)
+    name_table = str(abs(message.chat.id))
+    try:
+        wb = Workbook()
+        ws1 = wb.create_sheet("Sheet_A")
+        ws1.title = "main"
+        ws1 = wb.create_sheet("Sheet_B")
+        ws1.title = "agrees"
+        wb.remove_sheet(wb.get_sheet_by_name("Sheet"))
+        wb.save(f"{abs(int(name_table))}.xlsx")
     except Exception as ex:
         await bot.send_message(message.chat.id, str(ex))
+    await bot.send_message(message.chat.id, "Ты открыл ящик пандоры, хуйлуша\nЧтобы записать тебя в список пидарасов "
+                                            "нажми --> /add_me\nТак же, чтобы тебя, пидрилу ушастую, "
+                                            "можно было найти и предъявить за дол тебе, голодранец, нужно написать "
+                                            "мне в личные сообщения /star"
+                                            "\nЗапомнил, петушара ?", reply_markup=inline_kb1)
 
 
 @dp.message_handler(commands=['start'])
