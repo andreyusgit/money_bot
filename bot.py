@@ -27,9 +27,12 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 dp.middleware.setup(LoggingMiddleware())
 all_users = openpyxl.Workbook()
+main_sheet = all_users.create_sheet("Sheet_A")
+main_sheet.title = "cards"
 worksheet = all_users['Sheet']
-worksheet['A1']='---'
+worksheet['A1'] = '---'
 all_users.save('users.xlsx')
+user_deb = {}
 
 
 async def delete_message(message: types.Message, sleep_time: int = 0):
@@ -38,13 +41,13 @@ async def delete_message(message: types.Message, sleep_time: int = 0):
         await message.delete()
 
 
-@dp.message_handler(content_types=["new_chat_members"])
+@dp.message_handler(state='*', content_types=["new_chat_members"])
 async def new_member(message: types.Message):
     await message.delete()
     await message.answer(MESSAGES['hello'])
 
 
-@dp.message_handler(commands=['add_me'])
+@dp.message_handler(state='*', commands=['add_me'])
 async def process_add_user_command(message: types.Message):
     if str(message.chat.type) == 'group':
         username = message.from_user.username
@@ -72,15 +75,18 @@ async def process_add_user_command(message: types.Message):
                     second_sheet[f'{get_column_letter(i)}{j}'] = 0
                 wb.save(f"{abs(int(name_table))}.xlsx")
                 users = load_workbook('users.xlsx')
-                sheet = users.worksheets[0]
-                row_count = sheet.max_row
-                sheet[f'A{row_count + 1}'] = username
-                sheet[f'B{row_count + 1}'] = name_table
+                sheet = users['Sheet']
+                row_count = sheet.max_row + 1
+                sheet[f'A{row_count}'] = username
+                sheet[f'B{row_count}'] = name_table
+                sheet[f'C{row_count}'] = message.chat.title
+                sheet[f'D{row_count}'] = message.from_user.first_name
+                sheet[f'E{row_count}'] = message.from_user.last_name
                 users.save('users.xlsx')
                 break
 
 
-@dp.message_handler(commands=['start_me'])
+@dp.message_handler(state='*', commands=['start_me'])
 async def process_start_command(message: types.Message):
     if str(message.chat.type) == 'group':
         name_table = str(abs(message.chat.id))
@@ -97,27 +103,93 @@ async def process_start_command(message: types.Message):
         await bot.send_message(message.chat.id, MESSAGES['hello'])
 
 
-@dp.message_handler(commands=['add_debts'])
-async def process_add_user_command(message: types.Message):
-    name_table = 'название таблицы'
+@dp.message_handler(state='*', commands=['add_debts'])
+async def process_add_debts_command(message: types.Message):
+    if str(message.chat.type) == 'private':
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=False)
+        username = message.from_user.username
+        wb2 = openpyxl.load_workbook('users.xlsx')
+        active_sheet = wb2['Sheet']
+        user_deb[username] = [], [], []
+        for i in range(1, active_sheet.max_row + 1):
+            if username == active_sheet[f'A{i}'].value:
+                user_deb[username][0].append(active_sheet[f'B{i}'].value)
+                user_deb[username][1].append(active_sheet[f'C{i}'].value)
+        for i in range(len(user_deb[username][0])):
+            keyboard.add(f'{user_deb[username][1][i]}')
+        await bot.send_message(message.chat.id, 'Выбери из списка ниже в какой группе находится твой должник: ',
+                               reply_markup=keyboard)
+        state = dp.current_state(user=message.from_user.id)
+        await state.set_state(TestStates.all()[0])
+
+
+@dp.message_handler(state=TestStates.TEST_STATE_0)
+async def process_add_debts_command_2(message: types.Message):
+    wb2 = openpyxl.load_workbook('users.xlsx')
+    active_sheet = wb2['Sheet']
+    name_table = ''
+    keyboard2 = types.ReplyKeyboardMarkup(resize_keyboard=False)
+    for i in range(1, active_sheet.max_row + 1):
+        if message.text == active_sheet[f'C{i}'].value:
+            name_table = str(active_sheet[f'B{i}'].value)
+    user_deb[message.from_user.username][2].append(name_table)
     wb = openpyxl.load_workbook(f'{name_table}.xlsx')
-    current_sheet = wb['main']
+    first_sheet = wb['main']
+    for i in range(2, first_sheet.max_row + 1):
+        keyboard2.add(active_sheet[f'A{i}'].value)
+    await bot.send_message(message.chat.id, 'Выбери из списка ниже пользователя, который тебе задолжал: ',
+                           reply_markup=keyboard2)
+    state = dp.current_state(user=message.from_user.id)
+    await state.set_state(TestStates.all()[1])
+
+
+@dp.message_handler(state=TestStates.TEST_STATE_1)
+async def process_add_debts_command_2(message: types.Message):
+    user_deb[message.from_user.username][2].append(message.text)
+    await bot.send_message(message.chat.id, 'введи сумму долга:')
+    state = dp.current_state(user=message.from_user.id)
+    await state.set_state(TestStates.all()[2])
+
+
+@dp.message_handler(state=TestStates.TEST_STATE_2)
+async def process_add_debts_command_2(message: types.Message):
+    username = user_deb[message.from_user.username][2].pop()
+    name_table = user_deb[message.from_user.username][2].pop()
+    wb = openpyxl.load_workbook(f'{name_table}.xlsx')
+    active_sheet = wb['main']
     coll = 1
     for i in range(2, 1000):
-        if current_sheet[f'{get_column_letter(i)}1'].value is None:
+        if active_sheet[f'{get_column_letter(i)}1'].value is None:
             break
-        if current_sheet[f'{get_column_letter(i)}1'].value == message.from_user.username:
-            coll=get_column_letter(i)
+        if active_sheet[f'{get_column_letter(i)}1'].value == message.from_user.username:
+            coll = i
             break
     for i in range(2, 1000):
-        if current_sheet[f'A{i}'].value is None:
+        if active_sheet[f'A{i}'].value is None:
             break
-        if current_sheet[f'A{i}'].value == 'юзер один из выбранных':
-            current_sheet[f'{coll}{i}'] = current_sheet[f'{coll}{i}'].value + 'долг'/'количество выбранных'
+        if active_sheet[f'A{i}'].value == username:
+            active_sheet[f'{get_column_letter(coll)}{i}'] = active_sheet[
+                                                               f'{get_column_letter(coll)}{i}'].value + \
+                                                            int(message.text)
+            if active_sheet[f'{get_column_letter(i)}{coll}'].value > 0:
+                if active_sheet[f'{get_column_letter(coll)}{i}'].value > \
+                        active_sheet[f'{get_column_letter(i)}{coll}'].value:
+                    active_sheet[f'{get_column_letter(coll)}{i}'] = active_sheet[
+                                                                        f'{get_column_letter(coll)}{i}'].value - \
+                                                                    active_sheet[
+                                                                        f'{get_column_letter(i)}{coll}'].value
+                else:
+                    active_sheet[f'{get_column_letter(coll)}{i}'] = active_sheet[
+                                                                        f'{get_column_letter(i)}{coll}'].value - \
+                                                                    active_sheet[
+                                                                        f'{get_column_letter(coll)}{i}'].value
+        break
+    wb.save(f"{name_table}.xlsx")
 
 
-@dp.message_handler(commands=['delete_debts'])
-async def process_add_user_command(message: types.Message):
+
+@dp.message_handler(state='*', commands=['delete_debts'])
+async def process_delete_debts_command(message: types.Message):
     name_table = 'название таблицы'
     wb = openpyxl.load_workbook(f'{name_table}.xlsx')
     current_sheet = wb['main']
@@ -136,7 +208,7 @@ async def process_add_user_command(message: types.Message):
             break
 
 
-@dp.message_handler(commands=['start'])
+@dp.message_handler(state='*', commands=['start'])
 async def process_start_command(message: types.Message):
     await message.answer(MESSAGES['start'])
 
@@ -156,7 +228,7 @@ async def some_test_state_case_met(message: types.Message):
     await message.answer(MESSAGES['no_command'])
 
 
-@dp.message_handler()
+@dp.message_handler(state='*', commands=['stepa_hvatit'])
 async def echo_message(msg: types.Message):
     await bot.send_message(msg.chat.id, "че хочешь")
     await bot.send_message(msg.from_user.id, "hello")
