@@ -27,8 +27,8 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
 dp.middleware.setup(LoggingMiddleware())
 all_users = openpyxl.Workbook()
-main_sheet = all_users.create_sheet("Sheet_A")
-main_sheet.title = "cards"
+card_sheet = all_users.create_sheet("Sheet_A")
+card_sheet.title = "cards"
 worksheet = all_users['Sheet']
 worksheet['A1'] = '---'
 all_users.save('users.xlsx')
@@ -86,7 +86,7 @@ async def process_add_user_command(message: types.Message):
                 break
 
 
-@dp.message_handler(state='*', commands=['start_me'])
+@dp.message_handler(commands=['start_me'])
 async def process_start_command(message: types.Message):
     if str(message.chat.type) == 'group':
         name_table = str(abs(message.chat.id))
@@ -106,86 +106,83 @@ async def process_start_command(message: types.Message):
 @dp.message_handler(state='*', commands=['add_debts'])
 async def process_add_debts_command(message: types.Message):
     if str(message.chat.type) == 'private':
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=False)
+        groups_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=False, one_time_keyboard=True)
         username = message.from_user.username
         wb2 = openpyxl.load_workbook('users.xlsx')
         active_sheet = wb2['Sheet']
-        user_deb[username] = [], [], []
+        user_deb[username] = [], []
         for i in range(1, active_sheet.max_row + 1):
             if username == active_sheet[f'A{i}'].value:
-                user_deb[username][0].append(active_sheet[f'B{i}'].value)
-                user_deb[username][1].append(active_sheet[f'C{i}'].value)
+                user_deb[username][0].append(active_sheet[f'C{i}'].value)
         for i in range(len(user_deb[username][0])):
-            keyboard.add(f'{user_deb[username][1][i]}')
+            groups_keyboard.add(f'{user_deb[username][0][i]}')
         await bot.send_message(message.chat.id, 'Выбери из списка ниже в какой группе находится твой должник: ',
-                               reply_markup=keyboard)
+                               reply_markup=groups_keyboard)
         state = dp.current_state(user=message.from_user.id)
-        await state.set_state(TestStates.all()[0])
-
-
-@dp.message_handler(state=TestStates.TEST_STATE_0)
-async def process_add_debts_command_2(message: types.Message):
-    wb2 = openpyxl.load_workbook('users.xlsx')
-    active_sheet = wb2['Sheet']
-    name_table = ''
-    keyboard2 = types.ReplyKeyboardMarkup(resize_keyboard=False)
-    for i in range(1, active_sheet.max_row + 1):
-        if message.text == active_sheet[f'C{i}'].value:
-            name_table = str(active_sheet[f'B{i}'].value)
-    user_deb[message.from_user.username][2].append(name_table)
-    wb = openpyxl.load_workbook(f'{name_table}.xlsx')
-    first_sheet = wb['main']
-    for i in range(2, first_sheet.max_row + 1):
-        keyboard2.add(active_sheet[f'A{i}'].value)
-    await bot.send_message(message.chat.id, 'Выбери из списка ниже пользователя, который тебе задолжал: ',
-                           reply_markup=keyboard2)
-    state = dp.current_state(user=message.from_user.id)
-    await state.set_state(TestStates.all()[1])
+        await state.set_state(TestStates.all()[1])
 
 
 @dp.message_handler(state=TestStates.TEST_STATE_1)
 async def process_add_debts_command_2(message: types.Message):
-    user_deb[message.from_user.username][2].append(message.text)
-    await bot.send_message(message.chat.id, 'введи сумму долга:')
+    wb2 = openpyxl.load_workbook('users.xlsx')
+    active_sheet = wb2['Sheet']
+    name_table = ''
+    member_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=False, one_time_keyboard=True)
+    for i in range(1, active_sheet.max_row + 1):
+        if message.text == active_sheet[f'C{i}'].value:
+            name_table = str(active_sheet[f'B{i}'].value)
+    user_deb[message.from_user.username][1].append(name_table)
+    wb = openpyxl.load_workbook(f'{name_table}.xlsx')
+    main_sheet = wb['main']
+    for i in range(2, main_sheet.max_row + 1):
+        member_keyboard.add(active_sheet[f'A{i}'].value)
+    await bot.send_message(message.chat.id, 'Выбери из списка ниже пользователя, который тебе задолжал: ',
+                           reply_markup=member_keyboard)
     state = dp.current_state(user=message.from_user.id)
     await state.set_state(TestStates.all()[2])
 
 
 @dp.message_handler(state=TestStates.TEST_STATE_2)
 async def process_add_debts_command_2(message: types.Message):
-    username = user_deb[message.from_user.username][2].pop()
-    name_table = user_deb[message.from_user.username][2].pop()
+    user_deb[message.from_user.username][1].append(message.text)
+    await bot.send_message(message.chat.id, 'введи сумму долга:')
+    state = dp.current_state(user=message.from_user.id)
+    await state.set_state(TestStates.all()[3])
+
+
+@dp.message_handler(state=TestStates.TEST_STATE_3)
+async def process_add_debts_command_2(message: types.Message):
+    username = user_deb[message.from_user.username][1].pop()
+    name_table = user_deb[message.from_user.username][1].pop()
     wb = openpyxl.load_workbook(f'{name_table}.xlsx')
-    active_sheet = wb['main']
+    main_sheet = wb['main']
     coll = 1
     for i in range(2, 1000):
-        if active_sheet[f'{get_column_letter(i)}1'].value is None:
+        if main_sheet[f'{get_column_letter(i)}1'].value is None:
             break
-        if active_sheet[f'{get_column_letter(i)}1'].value == message.from_user.username:
+        if main_sheet[f'{get_column_letter(i)}1'].value == message.from_user.username:
             coll = i
             break
+    letter_coll = get_column_letter(coll)
     for i in range(2, 1000):
-        if active_sheet[f'A{i}'].value is None:
+        letter_i = get_column_letter(i)
+        if main_sheet[f'A{i}'].value is None:
             break
-        if active_sheet[f'A{i}'].value == username:
-            active_sheet[f'{get_column_letter(coll)}{i}'] = active_sheet[
-                                                               f'{get_column_letter(coll)}{i}'].value + \
-                                                            int(message.text)
-            if active_sheet[f'{get_column_letter(i)}{coll}'].value > 0:
-                if active_sheet[f'{get_column_letter(coll)}{i}'].value > \
-                        active_sheet[f'{get_column_letter(i)}{coll}'].value:
-                    active_sheet[f'{get_column_letter(coll)}{i}'] = active_sheet[
-                                                                        f'{get_column_letter(coll)}{i}'].value - \
-                                                                    active_sheet[
-                                                                        f'{get_column_letter(i)}{coll}'].value
+        if main_sheet[f'A{i}'].value == username:
+            main_sheet[f'{letter_coll}{i}'] = main_sheet[f'{letter_coll}{i}'].value + int(message.text)
+            if main_sheet[f'{letter_i}{coll}'].value > 0:
+                if main_sheet[f'{letter_coll}{i}'].value > main_sheet[f'{letter_i}{coll}'].value:
+                    main_sheet[f'{letter_coll}{i}'] = main_sheet[f'{letter_coll}{i}'].value - \
+                                                                    main_sheet[f'{letter_i}{coll}'].value
                 else:
-                    active_sheet[f'{get_column_letter(coll)}{i}'] = active_sheet[
-                                                                        f'{get_column_letter(i)}{coll}'].value - \
-                                                                    active_sheet[
-                                                                        f'{get_column_letter(coll)}{i}'].value
-        break
-    wb.save(f"{name_table}.xlsx")
-
+                    main_sheet[f'{letter_coll}{i}'] = main_sheet[f'{letter_i}{coll}'].value - \
+                                                                    main_sheet[f'{letter_coll}{i}'].value
+            await bot.send_message(message.chat.id,
+                                   f"Долг в {message.text} рублей успешно записан на пользователя @{username}")
+            wb.save(f"{name_table}.xlsx")
+            break
+    state = dp.current_state(user=message.from_user.id)
+    await state.set_state(TestStates.all()[0])
 
 
 @dp.message_handler(state='*', commands=['delete_debts'])
