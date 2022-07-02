@@ -3,6 +3,7 @@ import logging
 from contextlib import suppress
 import os.path
 import openpyxl
+import markdown
 
 from aiogram.utils.exceptions import MessageCantBeDeleted, MessageToDeleteNotFound
 from openpyxl import Workbook, load_workbook
@@ -49,37 +50,39 @@ async def process_callback_button1(callback_query: types.CallbackQuery):
     username = user_data[name].pop()
     if check == 0:
         val = -val
-        t = username
+        temp = username
         username = name
-        name = t
+        name = temp
     wb = openpyxl.load_workbook(f'{name_table}.xlsx')
     main_sheet = wb['main']
+    rows = main_sheet.max_row + 1
     coll = 1
-    for i in range(2, 1000):
+    for i in range(2, rows):
         if main_sheet[f'{get_column_letter(i)}1'].value is None:
             break
         if main_sheet[f'{get_column_letter(i)}1'].value == username:
             coll = i
             break
-    for i in range(2, 1000):
+    letter_col = get_column_letter(coll)
+    for i in range(2, rows):
         if main_sheet[f'A{i}'].value is None:
             break
         if main_sheet[f'A{i}'].value == name:
-            main_sheet[f'{get_column_letter(coll)}{i}'] = main_sheet[f'{get_column_letter(coll)}{i}'].value + val
+            main_sheet[f'{letter_col}{i}'] = main_sheet[f'{letter_col}{i}'].value + val
             if main_sheet[f'{get_column_letter(i)}{coll}'].value > 0:
-                if main_sheet[f'{get_column_letter(coll)}{i}'].value > \
+                if main_sheet[f'{letter_col}{i}'].value > \
                         main_sheet[f'{get_column_letter(i)}{coll}'].value:
-                    main_sheet[f'{get_column_letter(coll)}{i}'] = main_sheet[f'{get_column_letter(coll)}{i}'].value - \
+                    main_sheet[f'{letter_col}{i}'] = main_sheet[f'{letter_col}{i}'].value - \
                                                                   main_sheet[f'{get_column_letter(i)}{coll}'].value
                     main_sheet[f'{get_column_letter(i)}{coll}'] = 0
                 else:
                     main_sheet[f'{get_column_letter(i)}{coll}'] = main_sheet[f'{get_column_letter(i)}{coll}'].value - \
-                                                                  main_sheet[f'{get_column_letter(coll)}{i}'].value
-                    main_sheet[f'{get_column_letter(coll)}{i}'] = 0
+                                                                  main_sheet[f'{letter_col}{i}'].value
+                    main_sheet[f'{letter_col}{i}'] = 0
             else:
-                if main_sheet[f'{get_column_letter(coll)}{i}'].value < 0:
-                    main_sheet[f'{get_column_letter(i)}{coll}'] = -main_sheet[f'{get_column_letter(coll)}{i}'].value
-                    main_sheet[f'{get_column_letter(coll)}{i}'] = 0
+                if main_sheet[f'{letter_col}{i}'].value < 0:
+                    main_sheet[f'{get_column_letter(i)}{coll}'] = -main_sheet[f'{letter_col}{i}'].value
+                    main_sheet[f'{letter_col}{i}'] = 0
 
             wb.save(f"{name_table}.xlsx")
             break
@@ -105,11 +108,13 @@ async def process_callback_button1(callback_query: types.CallbackQuery):
     if check == 1:
         await bot.send_message(id_for_mess,
                                f'Долг не был подтвержден со стороны @{username}, рекомендуем связаться с этим '
-                               f'пользователем в личных сообщениях и выяснить причину, а после снова завести долг')
+                               f'пользователем в личных сообщениях и выяснить причину, *а после снова завести долг*',
+                               parse_mode="Markdown")
     elif check == 0:
         await bot.send_message(id_for_mess,
                                f'Возврат не был подтвержден со стороны @{username}, рекомендуем связаться с этим '
-                               f'пользователем в личных сообщениях и выяснить причину, а после снова завести возврат')
+                               f'пользователем в личных сообщениях и выяснить причину, *а после снова завести возврат*',
+                               parse_mode="Markdown")
 
 
 async def check_user(username, name, name_table, value, check):
@@ -131,14 +136,14 @@ async def check_user(username, name, name_table, value, check):
             break
     if check == 1:
         await bot.send_message(id_for_mess,
-                               f'Пользователь @{name} из группы {title} завел на тебя долг в размере {value} '
+                               f'Пользователь @{name} из группы {title} *завел на тебя долг* в размере {value} '
                                f'рублей, если все верно - нажми на кнопку "Да", если же что-то не так, жми на '
-                               f'кнопку "Нет"', reply_markup=inline_kb1)
+                               f'кнопку "Нет"', reply_markup=inline_kb1, parse_mode="Markdown")
     elif check == 0:
         await bot.send_message(id_for_mess,
-                               f'Пользователь @{name} из группы {title} вернул тебе долг в размере {value} '
+                               f'Пользователь @{name} из группы {title} *вернул тебе долг* в размере {value} '
                                f'рублей, если все верно - нажми на кнопку "Да", если же что-то не так, жми на '
-                               f'кнопку "Нет"', reply_markup=inline_kb1)
+                               f'кнопку "Нет"', reply_markup=inline_kb1, parse_mode="Markdown")
 
     user_data[username] = [name, name_table, value, check]
 
@@ -158,7 +163,11 @@ async def process_add_user_command(message: types.Message):
             await message.delete()
         wb = openpyxl.load_workbook(f'{name_table}.xlsx')
         first_sheet = wb['main']
-        for i in range(2, 1000):
+        empty_tab = 2
+        rows = first_sheet.max_row + 1
+        if rows == 2:
+            rows += 1
+        for i in range(2, rows):
             if first_sheet[f'A{i}'].value == username:
                 msg = await bot.send_message(message.chat.id, f'@{username} ты уже есть в базе')
                 asyncio.create_task(delete_message(msg, 5))
@@ -224,15 +233,16 @@ async def process_add_user_command(message: types.Message):
         name_table = all_tables.pop()
         wb = openpyxl.load_workbook(f'{name_table}.xlsx')
         current_sheet = wb['main']
+        rows = current_sheet.max_row + 1
         mes = 'МОИ ДОЛЖНИКИ:\n\n'
         coll = 1
-        for i in range(2, 1000):
+        for i in range(2, rows):
             if current_sheet[f'{get_column_letter(i)}1'].value is None:
                 break
             if current_sheet[f'{get_column_letter(i)}1'].value == message.from_user.username:
                 coll = get_column_letter(i)
                 break
-        for i in range(2, 1000):
+        for i in range(2, rows):
             if current_sheet[f'{coll}{i}'].value is None:
                 break
             if current_sheet[f'{coll}{i}'].value != 0:
@@ -341,12 +351,12 @@ async def process_help_command(message: types.Message):
     await message.answer(MESSAGES['help'])
 
 
-@dp.message_handler(state='*', commands=['thanks'])
+@dp.message_handler(commands=['thanks'])
 async def process_thx_command(message: types.Message):
     await message.answer(MESSAGES['thx'])
 
 
-@dp.message_handler(state=TestStates.all())
+@dp.message_handler()
 async def some_test_state_case_met(message: types.Message):
     await message.answer(MESSAGES['no_command'])
 
