@@ -33,6 +33,8 @@ card_sheet = all_users.create_sheet("Sheet_A")
 card_sheet.title = "cards"
 user_deb = {}
 user_data = {}
+groups = {}
+members = {}
 
 
 async def delete_message(message: types.Message, sleep_time: int = 0):
@@ -163,11 +165,10 @@ async def process_add_user_command(message: types.Message):
             await message.delete()
         wb = openpyxl.load_workbook(f'{name_table}.xlsx')
         first_sheet = wb['main']
-        empty_tab = 2
         rows = first_sheet.max_row + 1
         if rows == 2:
             rows += 1
-        for i in range(2, rows):
+        for i in range(2, rows + 1):
             if first_sheet[f'A{i}'].value == username:
                 msg = await bot.send_message(message.chat.id, f'@{username} ты уже есть в базе')
                 asyncio.create_task(delete_message(msg, 5))
@@ -218,37 +219,69 @@ async def process_start_command(message: types.Message):
         await bot.send_message(message.chat.id, MESSAGES['hello'])
 
 
-@dp.message_handler(commands=['my_debts'])
+@dp.message_handler(commands=['my_debts', 'my_debtors'])
 async def process_add_user_command(message: types.Message):
-    abspath = os.path.abspath("")
-    all_tables = []
-    mes = ''
-    for root, dirs, files in os.walk(abspath):
-        for file in files:
-            if file.endswith(".xlsx"):
-                if file.strip(".xlsx") != 'user':
-                    all_tables.append(file.strip(".xlsx"))
-    length = len(all_tables)
-    for index in range(length):
-        name_table = all_tables.pop()
-        wb = openpyxl.load_workbook(f'{name_table}.xlsx')
-        current_sheet = wb['main']
-        rows = current_sheet.max_row + 1
-        mes = 'МОИ ДОЛЖНИКИ:\n\n'
-        coll = 1
-        for i in range(2, rows):
-            if current_sheet[f'{get_column_letter(i)}1'].value is None:
-                break
-            if current_sheet[f'{get_column_letter(i)}1'].value == message.from_user.username:
-                coll = get_column_letter(i)
-                break
-        for i in range(2, rows):
-            if current_sheet[f'{coll}{i}'].value is None:
-                break
-            if current_sheet[f'{coll}{i}'].value != 0:
-                mes = mes + current_sheet[f'A{i}'].value + ': ' + \
-                      current_sheet[f'{coll}{i}'].value + '\n'
-    await bot.send_message(message.from_user.id, mes)
+    if str(message.chat.type) == 'private':
+        abspath = os.path.abspath("")
+        all_tables = []
+        mes = ''
+        username = message.from_user.username
+        for root, dirs, files in os.walk(abspath):
+            for file in files:
+                if file.endswith(".xlsx"):
+                    if file.strip(".xlsx") != 'user':
+                        all_tables.append(file.strip(".xlsx"))
+        length = len(all_tables)
+        if message.get_command(message) == 'my_debtors':
+            mes = 'МОИ ДОЛЖНИКИ:\n\n'
+        elif message.get_command(message) == 'my_debts':
+            mes = 'МОИ ДОЛГИ:\n\n'
+        for index in range(length):
+            name_table = all_tables.pop()
+            wb = openpyxl.load_workbook('users.xlsx')
+            active_sheet = wb['Sheet']
+            r = active_sheet.max_row + 1
+            title = ''
+            for i in range(1, r):
+                if name_table == active_sheet[f'B{i}'].value:
+                    title = active_sheet[f'C{i}'].value
+                    break
+            wb = openpyxl.load_workbook(f'{name_table}.xlsx')
+            current_sheet = wb['main']
+            if message.get_command(message) == 'my_debtors':
+                rows = current_sheet.max_row + 1
+                coll = -1
+                for i in range(2, rows):
+                    if current_sheet[f'{get_column_letter(i)}1'].value is None:
+                        break
+                    if current_sheet[f'{get_column_letter(i)}1'].value == username:
+                        coll = get_column_letter(i)
+                        break
+                if coll != -1:
+                    for i in range(2, rows):
+                        if current_sheet[f'{coll}{i}'].value is None:
+                            break
+                        if current_sheet[f'{coll}{i}'].value != 0:
+                            val = current_sheet[f'{coll}{i}'].value
+                            mes = mes + '@' + current_sheet[f'A{i}'].value + ': ' + f"{val:.{2}f}" + \
+                                  f' рублей (из чата {title})' + '\n'
+            elif message.get_command(message) == 'my_debts':
+                row = -1
+                for i in range(2, 1000):
+                    if current_sheet[f'A{i}'].value is None:
+                        break
+                    if current_sheet[f'A{i}'].value == username:
+                        row = i
+                        break
+                if row != -1:
+                    for i in range(2, 1000):
+                        if current_sheet[f'{get_column_letter(i)}{row}'].value is None:
+                            break
+                        if current_sheet[f'{get_column_letter(i)}{row}'].value != 0:
+                            val = current_sheet[f'{get_column_letter(i)}{row}'].value
+                            mes = mes + '@' + current_sheet[f'{get_column_letter(i)}1'].value + ': ' + f"{val:.{2}f}" + \
+                                  f' рублей (из чата {title})' + '\n'
+        await bot.send_message(message.from_user.id, mes)
 
 
 @dp.message_handler(state='*', commands=['add_debts', 'delete_debts'])
@@ -262,9 +295,12 @@ async def process_add_debts_groups_command(message: types.Message):
         if message.get_command(message) == 'delete_debts':
             check = 0
         user_deb[username] = [], [], check
+        groups[username] = []
         for i in range(1, active_sheet.max_row + 1):
             if username == active_sheet[f'A{i}'].value:
-                user_deb[username][0].append(active_sheet[f'C{i}'].value)
+                value = active_sheet[f'C{i}'].value
+                user_deb[username][0].append(value)
+                groups[username].append(value)
         for i in range(len(user_deb[username][0])):
             groups_keyboard.add(f'{user_deb[username][0][i]}')
         if check == 1:
@@ -279,6 +315,17 @@ async def process_add_debts_groups_command(message: types.Message):
 
 @dp.message_handler(state=TestStates.TEST_STATE_1)
 async def process_add_debts_user_command(message: types.Message):
+    username = message.from_user.username
+    state = dp.current_state(user=message.from_user.id)
+    try:
+        index_value = groups[username].index(message.text)
+        await state.set_state(TestStates.all()[2])
+    except ValueError:
+        markup = types.ReplyKeyboardRemove()
+        await bot.send_message(message.chat.id, 'Такой группы нет', reply_markup=markup)
+        await state.reset_state(with_data=False)
+        return
+    members[username] = []
     wb2 = openpyxl.load_workbook('users.xlsx')
     active_sheet = wb2['Sheet']
     name_table = ''
@@ -290,7 +337,10 @@ async def process_add_debts_user_command(message: types.Message):
     wb = openpyxl.load_workbook(f'{name_table}.xlsx')
     main_sheet = wb['main']
     for i in range(2, main_sheet.max_row + 1):
-        member_keyboard.add(active_sheet[f'A{i}'].value)
+        value = main_sheet[f'A{i}'].value
+        if value != username:
+            member_keyboard.add(value)
+            members[username].append(value)
     check = user_deb[message.from_user.username][2]
     if check == 1:
         await bot.send_message(message.chat.id, 'Выбери из списка ниже пользователя, который тебе задолжал: ',
@@ -298,21 +348,27 @@ async def process_add_debts_user_command(message: types.Message):
     elif check == 0:
         await bot.send_message(message.chat.id, 'Выбери из списка ниже пользователя, которому ты хочешь вернуть долг: ',
                                reply_markup=member_keyboard)
-    state = dp.current_state(user=message.from_user.id)
-    await state.set_state(TestStates.all()[2])
 
 
 @dp.message_handler(state=TestStates.TEST_STATE_2)
 async def process_add_debts_money_command(message: types.Message):
-    user_deb[message.from_user.username][1].append(message.text)
+    username = message.from_user.username
+    state = dp.current_state(user=message.from_user.id)
+    try:
+        index_value = members[username].index(message.text)
+        await state.set_state(TestStates.all()[3])
+    except ValueError:
+        markup = types.ReplyKeyboardRemove()
+        await bot.send_message(message.chat.id, 'Такого пользователя нет', reply_markup=markup)
+        await state.reset_state(with_data=False)
+        return
+    user_deb[username][1].append(message.text)
     markup = types.ReplyKeyboardRemove()
-    check = user_deb[message.from_user.username][2]
+    check = user_deb[username][2]
     if check == 1:
         await bot.send_message(message.chat.id, 'введи сумму долга:', reply_markup=markup)
     elif check == 0:
         await bot.send_message(message.chat.id, 'введи сумму возврата:', reply_markup=markup)
-    state = dp.current_state(user=message.from_user.id)
-    await state.set_state(TestStates.all()[3])
 
 
 @dp.message_handler(state=TestStates.TEST_STATE_3)
@@ -349,11 +405,6 @@ async def process_start_command(message: types.Message):
 @dp.message_handler(state='*', commands=['help'])
 async def process_help_command(message: types.Message):
     await message.answer(MESSAGES['help'])
-
-
-@dp.message_handler(commands=['thanks'])
-async def process_thx_command(message: types.Message):
-    await message.answer(MESSAGES['thx'])
 
 
 @dp.message_handler()
